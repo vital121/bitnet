@@ -56,6 +56,36 @@ _CONFIG_FOR_DOC = "BitLlamaConfig"
 
 
 class BitLlamaMLP(nn.Module):
+    """
+    This class implements the MLP (multilayer perceptron) component of the BitLlama model, 
+    serving as a fully connected feed-forward network. It applies a series of transformations 
+    to the input tensor, including linear projections and non-linear activations, 
+    to produce the output tensor. This component is typically used within the transformer 
+    decoder layers for additional processing of attention output.
+
+    The MLP consists of three main operations:
+    - A "gate" projection mapping from hidden size to intermediate size without bias.
+    - An "up" projection also mapping from hidden size to intermediate size without bias.
+    - A "down" projection mapping back from intermediate size to hidden size without bias.
+    The non-linearity between the gate and up projection is defined by the activation function 
+    specified in the configuration.
+
+    Parameters:
+        config (BitLlamaConfig): Configuration object containing model hyperparameters. 
+        The configuration includes the hidden size, intermediate size, and the type of 
+        activation function to use.
+
+    Forward Pass Input:
+        x (torch.Tensor): Input tensor to the MLP module.
+
+    Forward Pass Output:
+        torch.Tensor: Output tensor after applying the MLP transformations.
+
+    Example:
+        >>> mlp = BitLlamaMLP(config)
+        >>> input_tensor = torch.rand(size=(batch_size, seq_length, config.hidden_size))
+        >>> output_tensor = mlp(input_tensor)
+    """
     def __init__(self, config: BitLlamaConfig):
         super().__init__()
         self.config = config
@@ -71,6 +101,20 @@ class BitLlamaMLP(nn.Module):
 
 
 class BitLlamaAttention(LlamaAttention):
+    """
+    Custom attention mechanism for the BitLlama model, extending the LlamaAttention mechanism. It is designed to
+    process sequences for tasks requiring attention to previous tokens, such as language modeling.
+
+    Parameters:
+        config (BitLlamaConfig): Configuration class instance containing model hyperparameters.
+
+    The attention mechanism supports different configurations for key/value head dimensionality, enabling Grouped
+    Query Attention when `num_key_value_heads` differs from `num_attention_heads`. It incorporates position
+    embeddings using RoPE (Rotary Position Embeddings) with a configurable `rope_theta`.
+
+    Raises:
+        ValueError: If the hidden size is not divisible by the number of attention heads.
+    """
     def __init__(self, config: BitLlamaConfig):
         nn.Module.__init__(self)
 
@@ -124,6 +168,19 @@ BITLLAMA_ATTENTION_CLASSES = {
 
 
 class BitLlamaDecoderLayer(nn.Module):
+    """
+    Represents a single layer in the BitLlama decoder architecture. Each decoder layer is composed of a self-attention
+    mechanism and a feed-forward network (MLP), with layer normalization applied before and after the self-attention
+    and before the feed-forward network.
+
+    Parameters:
+        config (BitLlamaConfig): Configuration object containing model hyperparameters.
+        layer_idx (Optional[int]): Index of the layer within the decoder. This is used for logging and any layer-specific behaviors.
+
+    The layer supports optional caching of past key/value pairs to facilitate efficient decoding. It can output
+    attention weights if requested. This layer can also utilize the FlashAttention mechanism for improved performance
+    and efficiency, depending on the configuration.
+    """
     def __init__(self, config: BitLlamaConfig, layer_idx: Optional[int] = None):
         super().__init__()
         self.config = config
@@ -207,6 +264,22 @@ BITLLAMA_START_DOCSTRING = r"""
     BITLLAMA_START_DOCSTRING,
 )
 class BitLlamaPreTrainedModel(PreTrainedModel):
+    """
+    An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained models.
+    It extends the `PreTrainedModel` by including BitLlama-specific configurations and weight initialization methods.
+
+    Attributes:
+        config_class (BitLlamaConfig): The configuration class used to initialize the BitLlama model configurations.
+        base_model_prefix (str): A prefix used to differentiate the base model's parameters from those of the head(s).
+        supports_gradient_checkpointing (bool): Indicates if the model supports gradient checkpointing to save memory during training.
+        _no_split_modules (list[str]): Modules listed here will not be split among different GPUs in model parallel settings.
+        _skip_keys_device_placement (list[str]): Keys listed here will skip device placement when loading pretrained weights.
+        _supports_flash_attn_2 (bool): Indicates if the model supports Flash Attention version 2.
+        _supports_cache_class (bool): Indicates if the model supports caching mechanism for improved performance in generation tasks.
+
+    Methods:
+        _init_weights(self, module): Initializes the weights of the model according to the specified configurations in `BitLlamaConfig`.
+    """
     config_class = BitLlamaConfig
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
@@ -233,11 +306,28 @@ class BitLlamaPreTrainedModel(PreTrainedModel):
 )
 class BitLlamaModel(BitLlamaPreTrainedModel):
     """
-    Transformer decoder consisting of *config.num_hidden_layers* layers. Each layer is a [`BitLlamaDecoderLayer`]
-    Args:
-        config: BitLlamaConfig
-    """
+    The core BitLlama model transformer consisting of a series of `BitLlamaDecoderLayer` layers. This model is specifically designed
+    for tasks that involve generating or transforming text, leveraging the Llama architecture's capabilities.
 
+    Args:
+        config (BitLlamaConfig): The configuration instance with all the necessary parameters to build the model.
+
+    The model is composed of an embedding layer, multiple decoder layers as specified in the configuration, and a final normalization layer.
+    It supports operations such as gradient checkpointing and Flash Attention optimization for efficient memory usage and computational performance.
+
+    Attributes:
+        padding_idx (int): The index of the padding token in the token vocabulary.
+        vocab_size (int): The size of the token vocabulary.
+        embed_tokens (nn.Embedding): The embedding layer for input tokens.
+        layers (nn.ModuleList): The list of decoder layers (instances of `BitLlamaDecoderLayer`).
+        _use_flash_attention_2 (bool): Indicates whether Flash Attention version 2 is used in this model configuration.
+        norm (LlamaRMSNorm): The layer normalization applied to the output of the last decoder layer.
+
+    Methods:
+        get_input_embeddings(self): Returns the model's token embedding layer.
+        set_input_embeddings(self, value): Sets the model's token embedding layer to the specified value.
+        forward(self, input_ids=None, attention_mask=None, position_ids=None, past_key_values=None, inputs_embeds=None, use_cache=None, output_attentions=None, output_hidden_states=None, return_dict=None): Defines the forward pass of the BitLlama model.
+    """
     def __init__(self, config: BitLlamaConfig):
         super().__init__(config)
         self.padding_idx = config.pad_token_id
@@ -424,6 +514,37 @@ class BitLlamaModel(BitLlamaPreTrainedModel):
 
 
 class BitLlamaForCausalLM(BitLlamaPreTrainedModel):
+    """
+    This model is a variant of BitLlama designed for causal language modeling (CLM). It includes an additional linear
+    layer (lm_head) on top of the BitLlamaModel to predict the next token in a sequence given the history of previous tokens.
+
+    The CLM task aims to generate text in an autoregressive manner, where the prediction of each token only depends
+    on the tokens that precede it.
+
+    Parameters:
+        config (BitLlamaConfig): The configuration class instance containing all model hyperparameters.
+
+    Attributes:
+        _tied_weights_keys (List[str]): List containing the keys of the parameters for which weight tying is applied.
+                                        This is used to tie the weights of the output layer to the input embeddings, a
+                                        common practice in language modeling tasks to reduce the number of parameters.
+        model (BitLlamaModel): The underlying BitLlamaModel instance that performs the bulk of the computation.
+        vocab_size (int): The size of the vocabulary, defined in the configuration.
+        lm_head (nn.Linear): Linear layer that projects from hidden states to vocabulary size dimensions, used for token prediction.
+
+    Methods:
+        get_input_embeddings(self): Retrieves the embedding layer from the underlying BitLlamaModel.
+        set_input_embeddings(self, value): Sets the embedding layer of the underlying BitLlamaModel.
+        get_output_embeddings(self): Retrieves the linear layer used for predicting tokens from hidden states.
+        set_output_embeddings(self, new_embeddings): Sets the linear layer used for token prediction.
+        set_decoder(self, decoder): Replaces the underlying BitLlamaModel (decoder) with a new one.
+        get_decoder(self): Retrieves the underlying BitLlamaModel (decoder) used for computation.
+        forward(self, input_ids, attention_mask, position_ids, past_key_values, inputs_embeds, labels, use_cache, output_attentions, output_hidden_states, return_dict): Defines the forward pass for causal language modeling.
+
+    The forward method outputs a tuple or a `CausalLMOutputWithPast` object depending on the `return_dict` parameter,
+    containing the loss (if labels are provided), logits, past key values (if `use_cache` is True), and optionally
+    hidden states and attentions.
+    """
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
