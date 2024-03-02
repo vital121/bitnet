@@ -515,35 +515,31 @@ class BitLlamaModel(BitLlamaPreTrainedModel):
 
 class BitLlamaForCausalLM(BitLlamaPreTrainedModel):
     """
-    This model is a variant of BitLlama designed for causal language modeling (CLM). It includes an additional linear
-    layer (lm_head) on top of the BitLlamaModel to predict the next token in a sequence given the history of previous tokens.
+    BitLlamaForCausalLM is a model specifically tailored for causal language modeling tasks using the BitLlama architecture.
+    Causal language modeling involves predicting the next token in a sequence given the preceding tokens, focusing on autoregressive generation.
 
-    The CLM task aims to generate text in an autoregressive manner, where the prediction of each token only depends
-    on the tokens that precede it.
+    This model extends the capabilities of BitLlamaPreTrainedModel with an additional linear layer (lm_head) to map the output of the BitLlama model
+    to the vocabulary space, thereby facilitating token predictions.
 
     Parameters:
-        config (BitLlamaConfig): The configuration class instance containing all model hyperparameters.
+        config (BitLlamaConfig): Configuration class instance containing all model hyperparameters.
 
     Attributes:
-        _tied_weights_keys (List[str]): List containing the keys of the parameters for which weight tying is applied.
-                                        This is used to tie the weights of the output layer to the input embeddings, a
-                                        common practice in language modeling tasks to reduce the number of parameters.
-        model (BitLlamaModel): The underlying BitLlamaModel instance that performs the bulk of the computation.
-        vocab_size (int): The size of the vocabulary, defined in the configuration.
-        lm_head (nn.Linear): Linear layer that projects from hidden states to vocabulary size dimensions, used for token prediction.
+        _tied_weights_keys (List[str]): Specifies the parameters for which weight tying is applied, a common technique to reduce model size by sharing weights between the input embedding layer and the output prediction layer.
+        model (BitLlamaModel): The core BitLlama model instance responsible for the bulk of the computation.
+        vocab_size (int): The size of the model's vocabulary, determining the range of possible token predictions.
+        lm_head (nn.Linear): A linear layer that projects the hidden state output by the model to the vocabulary size for token prediction.
 
     Methods:
-        get_input_embeddings(self): Retrieves the embedding layer from the underlying BitLlamaModel.
-        set_input_embeddings(self, value): Sets the embedding layer of the underlying BitLlamaModel.
-        get_output_embeddings(self): Retrieves the linear layer used for predicting tokens from hidden states.
-        set_output_embeddings(self, new_embeddings): Sets the linear layer used for token prediction.
-        set_decoder(self, decoder): Replaces the underlying BitLlamaModel (decoder) with a new one.
-        get_decoder(self): Retrieves the underlying BitLlamaModel (decoder) used for computation.
-        forward(self, input_ids, attention_mask, position_ids, past_key_values, inputs_embeds, labels, use_cache, output_attentions, output_hidden_states, return_dict): Defines the forward pass for causal language modeling.
+        get_input_embeddings(): Retrieves the input embeddings layer from the BitLlamaModel, allowing for manipulation or inspection of the embedding weights.
+        set_input_embeddings(value): Sets a new embeddings layer for the BitLlamaModel, enabling customization of the input embeddings.
+        get_output_embeddings(): Accesses the output embeddings, specifically the weights used in the lm_head for token prediction.
+        set_output_embeddings(new_embeddings): Allows setting a new output embeddings layer, facilitating customization of the prediction weights.
+        set_decoder(decoder): Replaces the current BitLlamaModel (decoder) with a specified one, allowing for model updates or modifications.
+        get_decoder(): Retrieves the current BitLlamaModel used for decoding, useful for inspecting the model's configuration or state.
+        forward(): Implements the forward pass of the model for causal language modeling, handling input preparation, model computation, and output processing.
 
-    The forward method outputs a tuple or a `CausalLMOutputWithPast` object depending on the `return_dict` parameter,
-    containing the loss (if labels are provided), logits, past key values (if `use_cache` is True), and optionally
-    hidden states and attentions.
+    The forward method accepts various inputs and options to control the model's behavior during training or inference, returning outputs tailored for causal language modeling tasks, including optional loss calculation when labels are provided.
     """
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -591,15 +587,25 @@ class BitLlamaForCausalLM(BitLlamaPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-        r"""
-        Args:
-            labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
-                Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
-                config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
-                (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
 
-        Returns:
-        """
+    """
+    Processes input data through the BitLlama model for causal language modeling, predicting the next token in a sequence.
+
+    Parameters:
+        input_ids (Optional[torch.LongTensor]): Indices of input sequence tokens in the vocabulary.
+        attention_mask (Optional[torch.Tensor]): Mask to avoid performing attention on padding token indices.
+        position_ids (Optional[torch.LongTensor]): Positions of tokens in the input sequence; defaults to sequential positions.
+        past_key_values (Optional[List[torch.FloatTensor]]): List of past key and value states to enable efficient continuation of generation.
+        inputs_embeds (Optional[torch.FloatTensor]): Optionally, input token embeddings instead of token IDs, providing a way to inject custom embeddings.
+        labels (Optional[torch.LongTensor]): Labels for computing the language modeling loss. Tokens with `-100` are ignored (masked), focusing loss computation on the remaining tokens.
+        use_cache (Optional[bool]): If set to True, enables caching of past key and value states for more efficient generation.
+        output_attentions (Optional[bool]): Whether to return attention weights, providing insight into the model's focus during token prediction.
+        output_hidden_states (Optional[bool]): Whether to return the hidden states of all layers, facilitating deep analysis of the model's internal processing.
+        return_dict (Optional[bool]): Determines the return type of the method. If True, the output is returned as a custom object.
+
+    Returns:
+        Union[Tuple, CausalLMOutputWithPast]: A `CausalLMOutputWithPast` object (when `return_dict=True`) containing the loss (if labels are provided), logits, past key values (if caching is enabled), and optionally hidden states and attentions. When `return_dict=False`, these components are returned as a tuple.
+    """
         output_attentions = (
             output_attentions
             if output_attentions is not None
